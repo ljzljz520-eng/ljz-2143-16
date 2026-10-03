@@ -1,0 +1,9 @@
+services:
+  visual-window-app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: visual-window-app
+    ports:
+      - "6080:6080"
+    restart: "no"
