@@ -23,3 +23,8 @@ __pycache__/
 *.log
 .env
 .env.*
+
+runtime/*
+!runtime/.gitkeep
+device/device
+__pycache__/

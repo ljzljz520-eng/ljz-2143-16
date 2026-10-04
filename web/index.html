@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>背景窗口共建控制台</title>
+<style>
+  :root { --bg:#0f1420; --panel:#171e2e; --line:#2a3550; --fg:#e6ecff; --mut:#8b97b8;
+          --ok:#35c48d; --warn:#f0b429; --bad:#e5484d; --info:#5aa9ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.55 -apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+         background:var(--bg); color:var(--fg); }
+  header { padding:14px 22px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:14px; }
+  header h1 { font-size:17px; margin:0; }
+  header .mut { color:var(--mut); font-size:12px; }
+  .grid { display:grid; grid-template-columns:380px 1fr 1fr; gap:14px; padding:14px; }
+  @media (max-width:1100px){ .grid{ grid-template-columns:1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .panel h2 { font-size:13px; margin:0 0 10px; color:var(--mut); text-transform:uppercase; letter-spacing:.08em; }
+  label { display:block; font-size:12px; color:var(--mut); margin:8px 0 3px; }
+  input[type=text],input[type=number],select { width:100%; padding:7px 9px; background:#0c111d;
+        border:1px solid var(--line); border-radius:6px; color:var(--fg); font-size:13px; }
+  button { margin-top:10px; padding:7px 12px; border:0; border-radius:6px; cursor:pointer;
+           background:var(--info); color:#04101f; font-weight:600; font-size:13px; }
+  button.ghost { background:#26314d; color:var(--fg); font-weight:500; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .kv { display:grid; grid-template-columns:92px 1fr; gap:3px 8px; font-size:13px; }
+  .kv .k { color:var(--mut); }
+  .badge { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; font-weight:600; }
+  .b-applied{background:rgba(53,196,141,.15);color:var(--ok); border:1px solid rgba(53,196,141,.4);}
+  .b-prepared,.b-activating{background:rgba(240,180,41,.13);color:var(--warn); border:1px solid rgba(240,180,41,.4);}
+  .b-rejected,.b-failed{background:rgba(229,72,77,.13);color:var(--bad); border:1px solid rgba(229,72,77,.4);}
+  .b-interrupted{background:#3a2a12;color:#ffb454; border:1px solid #6b4a1f;}
+  .muted{color:var(--mut); font-size:12px;}
+  .diff { background:#2a1518; border:1px solid #58252a; border-radius:8px; padding:8px 10px; margin-top:6px;
+          font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; color:#ffb3b6; white-space:pre-wrap;}
+  .warnbox { background:#231d0c; border:1px solid #5a4a1c; border-radius:8px; padding:8px 10px; color:#f0d28a;
+             font-size:12.5px; margin:8px 0; }
+  .infobox{ background:#101d30; border:1px solid #24405f; border-radius:8px; padding:8px 10px; color:#a8d2ff;
+            font-size:12.5px; margin:8px 0; }
+  img.thumb{ max-width:100%; border-radius:8px; border:1px solid var(--line); margin-top:8px; background:#000;}
+  table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  th,td{ text-align:left; padding:5px 7px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th{ color:var(--mut); font-weight:600; }
+  .dot{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px;}
+  .dot.ok{background:var(--ok);} .dot.no{background:var(--bad);}
+  .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+  #toast{ position:fixed; right:16px; bottom:16px; max-width:420px; z-index:9; display:flex; flex-direction:column; gap:8px;}
+  .toast{ padding:10px 13px; border-radius:8px; font-size:13px; background:#1d2740; border:1px solid var(--line);}
+  .toast.err{border-color:#58252a;} .toast.ok{border-color:#245c48;} .toast.warn{border-color:#5a4a1c;}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;}
+  .threebar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;}
+  .threebar div{padding:8px;border-radius:8px;border:1px solid var(--line);font-size:12px;text-align:center;}
+</style>
+</head>
+<body>
+<header>
+  <h1>🖼 背景窗口共建控制台</h1>
+  <span class="mut">C 终端渲染器 × Web 控制台 ｜ 草稿（工作副本）→ 预备资源 → 整版原子提交 → 设备确认</span>
+  <span class="mut" id="clock"></span>
+</header>
+
+<div class="grid">
+  <!-- ============ 左：工作副本（草稿 / 编辑会话） ============ -->
+  <section class="panel">
+    <h2>① 工作副本 / 编辑会话（草稿，未发布）</h2>
+    <label>管理员</label>
+    <input type="text" id="admin" value="alice">
+    <label>基于的已发布版本 base_rev（乐观锁条件）</label>
+    <input type="number" id="baseRev" min="1">
+    <label>标题 title</label>
+    <input type="text" id="title" value="秋日主题">
+    <label>缩放 zoom (%) — 设备仅支持 25..200</label>
+    <input type="number" id="zoom" value="120">
+    <label>暗化 darken (%) — 设备仅支持 0..90</label>
+    <input type="number" id="darken" value="20">
+    <label>编辑图片（工作副本纹理）</label>
+    <input type="file" id="imgFile" accept="image/png,image/jpeg,.bin">
+    <div id="imgInfo" class="muted" style="margin-top:6px;">未选择新图片（可先用现场图）</div>
+    <div class="row">
+      <button id="saveDraft">保存草稿（版本条件）</button>
+    </div>
+    <div class="row">
+      <button class="ghost" id="prevBegin">预览（仅本会话）</button>
+      <button class="ghost" id="prevCancel">取消预览（撤销临时纹理）</button>
+    </div>
+    <div class="muted" id="sessLine"></div>
+    <div id="draftMsg"></div>
+
+    <h2 style="margin-top:16px;">已有草稿</h2>
+    <table id="draftTable"><thead><tr><th>草稿</th><th>管理员</th><th>base_rev</th><th>图</th><th></th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <!-- ============ 中：期望状态（数据库） ============ -->
+  <section class="panel">
+    <h2>② 期望状态（数据库登记的最新已确认版本）</h2>
+    <div class="kv" id="desired"></div>
+    <div id="pendingBox"></div>
+
+    <h2 style="margin-top:16px;">发布方案（publish plans / 待处理原因）</h2>
+    <table id="planTable">
+      <thead><tr><th>方案</th><th>状态</th><th>rev</th><th>管理员</th><th>待处理原因 / 差异</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="warnbox" id="casBox" style="display:none;"></div>
+    <div class="row">
+      <button id="publish">提交发布（整版原子呈现）</button>
+      <label class="muted" style="margin:0;"><input type="checkbox" id="loseConfirm"> 故障注入：ACTIVATE 确认丢失</label>
+    </div>
+    <div class="muted">发布使用草稿里选中的一条；expected_rev 必须等于当前期望 rev，否则拒绝，不会覆盖他人发布。</div>
+  </section>
+
+  <!-- ============ 右：现场结果（C 设备） ============ -->
+  <section class="panel">
+    <h2>③ 现场结果（C 背景窗口设备实际上屏）</h2>
+    <div id="liveHead"></div>
+    <div class="kv" id="actual" style="margin-top:8px;"></div>
+    <img class="thumb" id="liveImg" alt="设备现场图">
+    <div class="infobox">
+      HTTP 200 ≠ 应用成功。只有「设备现场」的版本与期望 rev 一致，才算真正生效；
+      两者不一致时必须看发布方案状态与待处理原因，并执行核对（reconcile）。
+    </div>
+    <h2 style="margin-top:14px;">设备最近事件（临时纹理 / 原子切换审计）</h2>
+    <div id="devEvents" class="mono muted" style="max-height:220px;overflow:auto;font-size:12px;"></div>
+    <button class="ghost" id="refresh">刷新</button>
+  </section>
+</div>
+<div id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+let uploadedSha = null, uploadedDecodable = false, selectedDraft = null, sessionId = null;
+let lastState = null;
+
+function toast(msg, kind='') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + kind; t.textContent = msg;
+  $('#toast').appendChild(t);
+  setTimeout(() => t.remove(), 6000);
+}
+async function api(path, opts={}) {
+  const r = await fetch(path, opts);
+  const j = await r.json().catch(() => ({}));
+  j._http = r.status;
+  return j;
+}
+function badge(state){ return `<span class="badge b-${state}">${state}</span>`; }
+
+$('#imgFile').onchange = async () => {
+  const f = $('#imgFile').files[0]; if (!f) return;
+  const buf = await f.arrayBuffer();
+  const r = await fetch('/api/images?name=' + encodeURIComponent(f.name),
+      {method:'POST', body: buf, headers:{'Content-Type':'application/octet-stream'}});
+  const j = await r.json();
+  uploadedSha = j.sha256; uploadedDecodable = j.decodable;
+  $('#imgInfo').innerHTML = j.decodable
+    ? `✅ <b>${f.name}</b> 可解码：${j.format} ${j.width}×${j.height}, ${j.bytes} 字节<br><span class="mono">sha256=${j.sha256.slice(0,24)}…</span>`
+    : `⛔ <b>${f.name}</b> 已保存但<b>不可解码</b>（草稿可保存，发布会被设备整版拒绝）<br><span class="mono">sha256=${j.sha256.slice(0,24)}…</span>`;
+  $('#imgInfo').className = j.decodable ? '' : 'diff';
+};
+
+$('#saveDraft').onclick = async () => {
+  if (!uploadedSha) { toast('请先选择编辑图片（或上传一张）', 'err'); return; }
+  const j = await api('/api/drafts', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({admin:$('#admin').value.trim(), base_rev:Number($('#baseRev').value),
+      title:$('#title').value, zoom:Number($('#zoom').value), darken:Number($('#darken').value),
+      image_sha256: uploadedSha})});
+  if (j.saved) {
+    toast(`草稿已保存（基于 rev=${j.base_rev}）${j.stale_warning ? '；但该基线已过期，发布会被拒绝' : ''}`,
+          j.stale_warning ? 'warn':'ok');
+    if (!j.image_decodable) toast('图片不可解码：草稿有效，但发布时设备会返回 field=image 能力差异', 'warn');
+    load();
+  } else toast('保存失败：' + (j.error||'?'), 'err');
+};
+
+$('#prevBegin').onclick = async () => {
+  if (!selectedDraft) { toast('请先在草稿表里选择一条草稿', 'err'); return; }
+  sessionId = sessionId || ('sess-' + Math.random().toString(16).slice(2,10));
+  $('#sessLine').textContent = '会话：' + sessionId + '（预览只属于此会话）';
+  const j = await api(`/api/drafts/${selectedDraft}/preview/begin`, {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({session: sessionId, delay_ms: 1500})});
+  toast(j.note || j.preview, j.preview ? 'ok':'err');
+};
+$('#prevCancel').onclick = async () => {
+  if (!selectedDraft) return toast('请选择草稿', 'err');
+  sessionId = sessionId || ('sess-' + Math.random().toString(16).slice(2,10));
+  const j = await api(`/api/drafts/${selectedDraft}/preview/cancel`, {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({session: sessionId})});
+  toast('已取消：慢于取消的下载纹理到达后会被设备丢弃（generation 栅栏）', 'ok');
+};
+
+$('#publish').onclick = async () => {
+  if (!selectedDraft) return toast('请先在草稿表里选择要发布的草稿', 'err');
+  const rev = lastState.desired.rev;
+  const j = await api('/api/publish', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({draft_id: selectedDraft, expected_rev: rev,
+        admin: $('#admin').value.trim(), _lose_confirm: $('#loseConfirm').checked})});
+  if (j.applied === true) {
+    toast(j.noop ? '内容与现场一致，未产生新版本' : `✅ 已真正上屏，rev=${j.rev}（设备确认）`, 'ok');
+  } else if (j.error === 'CONFIRMATION_LOST') {
+    toast('ACTIVATE 确认丢失：设备可能已应用！请勿重复提交，已自动核对…', 'warn');
+    const rc = await api(`/api/plans/${j.plan_id}/reconcile`, {method:'POST'});
+    toast(rc.ok ? '核对完成：设备确实已应用，数据库已补登记' :
+                  ('核对未决：' + (rc.pending_reason||rc.state)), rc.ok?'ok':'err');
+  } else if (j.error === 'CAPABILITY_DIFF') {
+    toast('整版应用失败，旧版保留；见字段能力差异', 'err');
+  } else if (j.error === 'DRAFT_STALE' || j.error === 'REVISION_CONFLICT') {
+    toast('版本冲突：' + j.detail.hint || ('当前 rev=' + j.detail.current_rev + '，未覆盖他人配置'), 'err');
+  } else {
+    toast('发布未成功：' + (j.error||'?'), 'err');
+  }
+  $('#loseConfirm').checked = false;
+  load();
+};
+
+$('#refresh').onclick = () => { load(); };
+
+async function load() {
+  const s = await api('/api/state'); lastState = s;
+  $('#clock').textContent = new Date().toLocaleTimeString();
+  // 期望
+  const d = s.desired;
+  $('#baseRev').placeholder = d.rev;
+  if (!$('#baseRev').value) $('#baseRev').value = d.rev;
+  $('#desired').innerHTML = `
+    <div class="k">期望 rev</div><div><b>${d.rev}</b> <span class="muted">(${d.updated_at})</span></div>
+    <div class="k">标题</div><div>${escapeHtml(d.title)}</div>
+    <div class="k">缩放/暗化</div><div>${d.zoom}% / ${d.darken}%</div>
+    <div class="k">图片</div><div class="mono" style="word-break:break-all;">${d.image_sha256.slice(0,32)}… ${d.image_w}×${d.image_h}</div>
+    <div class="k">发布人</div><div>${escapeHtml(d.updated_by)} · 方案 ${d.published_plan||'-'}</div>`;
+  $('#pendingBox').innerHTML = d.pending
+    ? `<div class="warnbox">⚠ 存在未决方案 ${badge(d.pending.state)} ${d.pending.plan_id}<br>${escapeHtml(d.pending.reason||'')}
+       <br><button class="ghost" onclick="reconcile('${d.pending.plan_id}')">幂等核对 reconcile</button></div>` : '';
+
+  // 草稿
+  const tb = $('#draftTable tbody');
+  tb.innerHTML = s.drafts.map(x => {
+    const stale = x.base_rev !== d.rev;
+    return `<tr style="${selectedDraft===x.draft_id?'background:#1c2942;':''}">
+      <td class="mono">${x.draft_id}</td><td>${escapeHtml(x.admin)}</td>
+      <td>${x.base_rev}${stale?' <span class="badge b-failed">过期</span>':''}</td>
+      <td>${x.image_decodable?'✅':'⛔不可解码'}</td>
+      <td><button class="ghost" onclick="pickDraft('${x.draft_id}')">选择</button></td></tr>`;
+  }).join('') || '<tr><td colspan=5 class=muted>暂无草稿</td></tr>';
+
+  // 方案
+  $('#planTable tbody').innerHTML = s.plans.map(p => {
+    let extra = '';
+    if (p.device_diff) { try {
+      const arr = JSON.parse(p.device_diff);
+      extra = arr.map(i => `${i.field}: ${i.code}（请求=${i['requested']??'-'}, 支持=${i['supported']??'-'}）`).join('\n');
+    } catch(e){} }
+    if (p.pending_reason) extra += (extra?'\n':'') + p.pending_reason;
+    const canR = ['prepared','activating','interrupted'].includes(p.state);
+    return `<tr><td class="mono">${p.plan_id}</td><td>${badge(p.state)}</td>
+      <td>${p.expected_rev}→${p.new_rev}</td><td>${escapeHtml(p.admin)}</td>
+      <td><div class="diff" style="margin:0;">${escapeHtml(extra)||'—'}</div></td>
+      <td>${canR?`<button class="ghost" onclick="reconcile('${p.plan_id}')">核对</button>`:''}</td></tr>`;
+  }).join('');
+
+  // 现场
+  const a = s.actual;
+  if (!a.reachable) {
+    $('#liveHead').innerHTML = '<span class="dot no"></span><b>设备不可达</b>';
+    $('#actual').innerHTML = `<div class="k">错误</div><div>${escapeHtml(a.error||'')}</div>`;
+  } else {
+    const match = a.live_sha256 === d.image_sha256 && a.live_title === d.title
+                  && a.live_zoom === d.zoom && a.live_darken === d.darken;
+    $('#liveHead').innerHTML = `<span class="dot ${match?'ok':'no'}"></span>` +
+      (match ? `<b>现场 = 期望（rev ${d.rev} 已真正生效）</b>`
+             : `<b>现场 ≠ 期望：存在未完成/未确认的发布</b>`);
+    $('#actual').innerHTML = `
+      <div class="k">现场标题</div><div>${escapeHtml(a.live_title)}</div>
+      <div class="k">缩放/暗化</div><div>${a.live_zoom}% / ${a.live_darken}%</div>
+      <div class="k">现场图片</div><div class="mono" style="word-break:break-all;">${(a.live_sha256||'').slice(0,32)}… ${a.live_w}×${a.live_h}</div>
+      <div class="k">预览叠加</div><div>${a.preview_state||'idle'} ${a.preview_session?('('+a.preview_session+')'):''} <span class="muted">（仅会话，不影响现场版本）</span></div>
+      <div class="k">已应用</div><td class="mono">${a.applied||'-'}</div>`;
+    $('#liveImg').src = '/api/images/' + a.live_sha256 + '?t=' + Date.now();
+  }
+}
+window.pickDraft = (id) => {
+  selectedDraft = id;
+  const x = lastState.drafts.find(v => v.draft_id === id);
+  if (x) { $('#title').value = x.title; $('#zoom').value = x.zoom;
+           $('#darken').value = x.darken; $('#baseRev').value = x.base_rev;
+           uploadedSha = x.image_sha256;
+           $('#imgInfo').innerHTML = `已选草稿图片 ${x.image_decodable?'✅':'⛔不可解码'} <span class="mono">${x.image_sha256.slice(0,20)}…</span>`;
+           $('#imgInfo').className = x.image_decodable?'muted':'diff'; }
+  toast('已选择草稿 ' + id); load();
+};
+window.reconcile = async (pid) => {
+  const j = await api(`/api/plans/${pid}/reconcile`, {method:'POST'});
+  toast(j.ok ? '核对成功：现场已应用，版本已补登记' : ('核对结果：' + (j.state||j.error) + ' '+(j.pending_reason||'')),
+        j.ok?'ok':'warn');
+  load();
+};
+function escapeHtml(s){ return String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+load(); setInterval(load, 3000);
+</script>
+</body>
+</html>
